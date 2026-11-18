@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#12141c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>PCT — Personal Course Tracker</title>
+<style>
+:root{--bg:#12141c;--sf:#1b1e29;--rs:#232635;--bd:#2a2d3b;--ac:#f2a93b;--ac2:#5fc9b8;--tx:#e9e8ea;--mu:#8b8d9c;--dn:#d9645f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif}
+button,input,select{font:inherit;color:inherit}
+button{background:var(--rs);border:1px solid var(--bd);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.pri{background:var(--ac);color:#12141c;border-color:var(--ac);font-weight:600}
+button.danger{color:var(--dn);border-color:var(--dn);background:none}
+input,select{background:var(--rs);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;width:100%}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--bg);z-index:5}
+header b{font-size:17px;letter-spacing:.3px}header b i{color:var(--ac);font-style:normal}
+#st{font-size:12px;color:var(--mu);cursor:pointer}
+nav{display:flex;gap:6px;padding:10px 16px 0}
+nav button{flex:1}nav button.on{border-color:var(--ac);color:var(--ac)}
+main{max-width:760px;margin:0 auto;padding:12px 16px 80px}
+.crumbs{color:var(--mu);margin:6px 0 12px;font-size:14px}.crumbs a{color:var(--ac2);cursor:pointer}
+.top,.tools,.btns{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+.top{justify-content:space-between}.sp{flex:1}
+.row{display:flex;align-items:center;gap:12px;background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin:8px 0;cursor:pointer}
+.grow{flex:1;min-width:0}.grow b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+small,.sub{color:var(--mu);font-size:12.5px}
+.cnt{font-family:ui-monospace,Consolas,monospace;font-size:13px;color:var(--mu);white-space:nowrap}
+.bar{height:6px;background:var(--rs);border-radius:3px;margin:6px 0 2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ac)}
+.done .bar i{background:var(--ac2)}
+.plus{padding:6px 10px;min-width:44px}
+.chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:6px;margin-top:14px}
+.chip{padding:9px 0;text-align:center;font-family:ui-monospace,Consolas,monospace}
+.chip.on{background:var(--ac2);color:#12141c;border-color:var(--ac2)}
+h2{margin:10px 0 2px}
+.empty{color:var(--mu);text-align:center;padding:40px 0}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:10px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid .card{margin:0}.grid b{font-size:22px;display:block}
+dialog{background:var(--sf);color:var(--tx);border:1px solid var(--bd);border-radius:12px;width:min(92vw,400px)}
+dialog::backdrop{background:#000a}dialog label{display:block;margin:10px 0;color:var(--mu);font-size:13px}
+dialog h3{margin:0 0 4px}
+</style>
+</head>
+<body>
+<header><b>PCT<i>.</i></b><span id="st"></span></header>
+<nav id="nav" hidden>
+  <button data-act="nav" data-id="browse">Library</button>
+  <button data-act="nav" data-id="watching">Watching</button>
+  <button data-act="nav" data-id="stats">Stats</button>
+</nav>
+<main id="app"></main>
+<dialog id="dlg"></dialog>
+<input type="file" id="imp" accept=".json" hidden>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3);
+let S={nodes:{}},route={v:'browse',id:null},url=localStorage.getItem('ctr.url'),T=null,dirty=false,loaded=false;
+
+async function api(m,b){
+  const r=await fetch(url,{method:m,headers:b?{'Content-Type':'application/json'}:{},body:b?JSON.stringify(b):undefined});
+  if(!r.ok)throw new Error(r.status);return r.json();
+}
+const setSt=t=>$('#st').textContent=t;
+function sched(){dirty=true;setSt('Saving…');clearTimeout(T);T=setTimeout(saveNow,700)}
+async function saveNow(){
+  clearTimeout(T);if(!loaded||!dirty)return;dirty=false;
+  try{await api('POST',S);setSt('Saved')}catch(e){dirty=true;setSt('Save failed – tap to retry')}
+}
+async function load(){
+  try{const d=await api('GET');S={nodes:d.nodes||{}};loaded=true;setSt('Synced');return true}
+  catch(e){return false}
+}
+
+/* ---------- tree helpers ---------- */
+const kids=pid=>Object.values(S.nodes).filter(n=>(n.parentId||null)===(pid||null))
+  .sort((a,b)=>(a.type===b.type?0:a.type==='folder'?-1:1)||a.name.localeCompare(b.name,'fa'));
+function agg(id){let t=0,w=0,nc=0;for(const k of kids(id)){if(k.type==='course'){nc++;t+=k.total;w+=k.w.length}else{const a=agg(k.id);t+=a.t;w+=a.w;nc+=a.nc}}return{t,w,nc}}
+function path(id){const p=[];let n=id&&S.nodes[id];while(n){p.unshift(n);n=n.parentId&&S.nodes[n.parentId]}return p}
+const pathStr=id=>path(S.nodes[id]?.parentId).map(n=>n.name).join(' › ');
+function desc(id){const s=new Set([id]);let ch=true;while(ch){ch=false;for(const n of Object.values(S.nodes))if(n.parentId&&s.has(n.parentId)&&!s.has(n.id)){s.add(n.id);ch=true}}return s}
+const bar=(w,t)=>`<div class="bar"><i style="width:${t?w/t*100:0}%"></i></div>`;
+const courses=()=>Object.values(S.nodes).filter(n=>n.type==='course');
+
+/* ---------- views ---------- */
+function vBrowse(){
+  if(route.id&&!S.nodes[route.id])route.id=null;
+  let c=`<a data-act="open" data-id="">Home</a>`;
+  path(route.id).forEach(n=>c+=` › <a data-act="open" data-id="${n.id}">${esc(n.name)}</a>`);
+  const ks=kids(route.id);
+  let h=`<div class="crumbs">${c}</div>
+  <div class="tools"><button data-act="newFolder">+ Folder</button><button data-act="newCourse" class="pri">+ Course</button>
+  ${route.id?`<span class="sp"></span><button data-act="edit" data-id="${route.id}">Edit folder</button>`:''}</div>`;
+  if(!ks.length)h+=`<div class="empty">Nothing here yet.</div>`;
+  for(const k of ks){
+    if(k.type==='folder'){const a=agg(k.id);
+      h+=`<div class="row${a.t&&a.w===a.t?' done':''}" data-act="open" data-id="${k.id}"><span>📁</span><div class="grow"><b dir="auto">${esc(k.name)}</b><small>${a.nc} courses</small>${bar(a.w,a.t)}</div><span class="cnt">${a.w}/${a.t}</span></div>`;
+    }else h+=courseRow(k,false);
+  }
+  return h;
+}
+function courseRow(k,showPath){
+  const w=k.w.length,dn=w>=k.total;
+  return `<div class="row${dn?' done':''}" data-act="course" data-id="${k.id}"><span>🎧</span><div class="grow"><b dir="auto">${esc(k.name)}</b>${showPath&&pathStr(k.id)?`<small dir="auto">${esc(pathStr(k.id))}</small>`:''}${bar(w,k.total)}</div><span class="cnt">${w}/${k.total}</span>${dn?'':`<button class="plus" data-act="next" data-id="${k.id}">+1</button>`}</div>`;
+}
+function vCourse(){
+  const c=S.nodes[route.id];if(!c){route={v:'browse',id:null};return vBrowse()}
+  const w=new Set(c.w);let chips='';
+  for(let i=1;i<=c.total;i++)chips+=`<button class="chip${w.has(i)?' on':''}" data-act="tg" data-n="${i}">${i}</button>`;
+  return `<div class="top"><button data-act="back">‹ Back</button><button data-act="edit" data-id="${c.id}">Edit</button></div>
+  <h2 dir="auto">${esc(c.name)}</h2><div class="sub" dir="auto">${esc(pathStr(c.id)||'Home')}</div>
+  <div class="${w.size>=c.total?'done':''}">${bar(w.size,c.total)}</div>
+  <div class="cnt">${w.size}/${c.total} · ${c.total-w.size} left</div>
+  <div class="tools"><button class="pri" data-act="next" data-id="${c.id}">Mark next</button>
+  <input id="upto" type="number" inputmode="numeric" min="1" max="${c.total}" placeholder="#" style="width:70px"><button data-act="upto">Mark 1…N</button>
+  <span class="sp"></span><button data-act="reset" class="danger">Reset</button></div>
+  <div class="chips">${chips}</div>`;
+}
+function vWatching(){
+  const l=courses().filter(c=>c.w.length>0&&c.w.length<c.total).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  return `<h2>In progress (${l.length})</h2>`+(l.length?l.map(c=>courseRow(c,true)).join(''):`<div class="empty">No course in progress.</div>`);
+}
+function vStats(){
+  const cs=courses();let t=0,w=0,ns=0,ip=0,dn=0;
+  for(const c of cs){t+=c.total;w+=c.w.length;if(!c.w.length)ns++;else if(c.w.length>=c.total)dn++;else ip++}
+  const card=(n,l)=>`<div class="card"><b>${n}</b><small>${l}</small></div>`;
+  return `<h2>Stats</h2><div class="grid">${card(cs.length,'courses')}${card(t,'total episodes')}${card(w,'watched')}${card(t-w,'remaining')}${card(ns,'not started')}${card(ip,'in progress')}${card(dn,'completed')}</div>
+  <div class="tools" style="margin-top:20px"><button data-act="export">Export backup</button><button data-act="import">Import backup</button><button data-act="chUrl">Change Worker URL</button></div>`;
+}
+function render(){
+  $('#nav').hidden=false;
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.id===(route.v==='course'?'browse':route.v)));
+  $('#app').innerHTML=({browse:vBrowse,course:vCourse,watching:vWatching,stats:vStats})[route.v]();
+}
+function go(r){route=r;history.pushState(r,'');render();scrollTo(0,0)}
+addEventListener('popstate',e=>{route=e.state||{v:'browse',id:null};render()});
+
+/* ---------- episode actions ---------- */
+function setW(c,set){c.w=[...set].sort((a,b)=>a-b);c.updatedAt=Date.now();sched();render()}
+function markNext(id){const c=S.nodes[id],s=new Set(c.w);for(let i=1;i<=c.total;i++)if(!s.has(i)){s.add(i);break}setW(c,s)}
+
+/* ---------- dialog ---------- */
+function openDlg(kind,node,parentId){
+  const d=$('#dlg'),ex=node?desc(node.id):new Set(),cur=node?node.parentId||'':(parentId||'');
+  const opts=[`<option value="">Home</option>`];
+  Object.values(S.nodes).filter(n=>n.type==='folder'&&!ex.has(n.id)).forEach(n=>{
+    const l=[...path(n.id).map(x=>x.name)].join(' › ');opts.push(`<option value="${n.id}"${n.id===cur?' selected':''}>${esc(l)}</option>`)});
+  d.innerHTML=`<h3>${node?'Edit':'New'} ${kind}</h3>
+  <label>Name<input id="fn" dir="auto" value="${esc(node?.name||'')}"></label>
+  ${kind==='course'?`<label>Number of episodes<input id="ft" type="number" inputmode="numeric" min="1" value="${node?.total||''}"></label>`:''}
+  <label>Location<select id="fp">${opts.join('')}</select></label>
+  <div class="btns">${node?'<button class="danger" data-act="del">Delete</button>':''}<span class="sp"></span><button data-act="cancel">Cancel</button><button class="pri" data-act="ok">Save</button></div>`;
+  d._c={kind,node};d.showModal();
+}
+function okDlg(){
+  const d=$('#dlg'),{kind,node}=d._c,name=$('#fn').value.trim(),pid=$('#fp').value||null;
+  if(!name){$('#fn').focus();return}
+  let total;if(kind==='course'){total=parseInt($('#ft').value);if(!(total>=1)){$('#ft').focus();return}}
+  let n=node;
+  if(!n){n={id:uid(),type:kind,addedAt:Date.now()};if(kind==='course')n.w=[];S.nodes[n.id]=n}
+  n.name=name;n.parentId=pid;n.updatedAt=Date.now();
+  if(kind==='course'){n.total=total;n.w=n.w.filter(x=>x<=total)}
+  d.close();sched();render();
+}
+function delNode(){
+  const d=$('#dlg'),n=d._c.node,ids=desc(n.id);
+  if(!confirm(`Delete "${n.name}"${n.type==='folder'&&ids.size>1?' and everything inside it':''}?`))return;
+  const pid=n.parentId||null;ids.forEach(i=>delete S.nodes[i]);d.close();
+  if(route.v==='course'||ids.has(route.id)){route={v:'browse',id:pid};history.replaceState(route,'')}
+  sched();render();
+}
+
+/* ---------- click router ---------- */
+const ACT={
+  nav:id=>go({v:id,id:null}),
+  open:id=>go({v:'browse',id:id||null}),
+  course:id=>go({v:'course',id}),
+  back:()=>history.length>1?history.back():go({v:'browse',id:null}),
+  next:id=>markNext(id),
+  tg:(_,a)=>{const c=S.nodes[route.id],s=new Set(c.w),n=+a.dataset.n;s.has(n)?s.delete(n):s.add(n);setW(c,s)},
+  upto:()=>{const c=S.nodes[route.id],n=Math.min(parseInt($('#upto').value)||0,c.total);if(n<1)return;const s=new Set(c.w);for(let i=1;i<=n;i++)s.add(i);setW(c,s)},
+  reset:()=>{const c=S.nodes[route.id];if(confirm('Clear all progress for this course?'))setW(c,new Set())},
+  newFolder:()=>openDlg('folder',null,route.id),
+  newCourse:()=>openDlg('course',null,route.id),
+  edit:id=>openDlg(S.nodes[id].type,S.nodes[id]),
+  ok:okDlg,del:delNode,cancel:()=>$('#dlg').close(),
+  export:()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,1)],{type:'application/json'}));a.download='course-tracker-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click()},
+  import:()=>$('#imp').click(),
+  chUrl:()=>showSetup(),
+};
+document.addEventListener('click',e=>{const a=e.target.closest('[data-act]');if(a&&ACT[a.dataset.act])ACT[a.dataset.act](a.dataset.id,a)});
+$('#imp').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{const d=JSON.parse(await f.text());if(!d.nodes||typeof d.nodes!=='object')throw 0;
+    if(confirm('Replace all current data with this backup?')){S={nodes:d.nodes};dirty=true;await saveNow();render()}}
+  catch(_){alert('Invalid backup file')}
+});
+$('#st').addEventListener('click',saveNow);
+document.addEventListener('visibilitychange',async()=>{
+  if(document.hidden)saveNow();
+  else if(loaded&&!dirty&&url&&!$('#dlg').open){if(await load())render()}
+});
+
+/* ---------- setup & start ---------- */
+function showSetup(msg){
+  $('#nav').hidden=true;
+  $('#app').innerHTML=`<h2>Setup</h2><p class="sub">Paste your Cloudflare Worker address.</p>
+  <input id="u" placeholder="https://ctr.xxx.workers.dev" value="${esc(url||'')}" dir="ltr">
+  <div class="tools"><button class="pri" id="uok">Connect</button></div><div id="um" class="sub">${msg||''}</div>`;
+  $('#uok').onclick=async()=>{
+    let v=$('#u').value.trim();if(!v)return;if(!/^https?:\/\//.test(v))v='https://'+v;v=v.replace(/\/+$/,'');
+    const old=url;url=v;$('#um').textContent='Testing…';
+    if(await load()){localStorage.setItem('ctr.url',url);route={v:'browse',id:null};history.replaceState(route,'');render()}
+    else{url=old;$('#um').textContent='Could not connect to the Worker.'}
+  };
+}
+function showError(){
+  $('#nav').hidden=true;
+  $('#app').innerHTML=`<div class="empty">Could not load your data.<div class="tools" style="justify-content:center"><button class="pri" id="rt">Retry</button><button data-act="chUrl">Change URL</button></div></div>`;
+  $('#rt').onclick=start;
+}
+async function start(){
+  if(!url)return showSetup();
+  setSt('Loading…');
+  if(await load()){history.replaceState(route,'');render()}else{setSt('Offline');showError()}
+}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('service-worker.js');
+start();
+</script>
+</body>
+</html>
