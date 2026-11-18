@@ -48,8 +48,8 @@ dialog h3{margin:0 0 4px}
 <body>
 <header><b>PCT<i>.</i></b><span id="st"></span></header>
 <nav id="nav" hidden>
+  <button data-act="nav" data-id="watching">Following</button>
   <button data-act="nav" data-id="browse">Library</button>
-  <button data-act="nav" data-id="watching">Watching</button>
   <button data-act="nav" data-id="stats">Stats</button>
 </nav>
 <main id="app"></main>
@@ -59,7 +59,7 @@ dialog h3{margin:0 0 4px}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3);
-let S={nodes:{}},route={v:'browse',id:null},url=localStorage.getItem('ctr.url'),T=null,dirty=false,loaded=false;
+let S={nodes:{}},route={v:'watching',id:null},url=localStorage.getItem('ctr.url'),T=null,dirty=false,loaded=false;
 
 async function api(m,b){
   const r=await fetch(url,{method:m,headers:b?{'Content-Type':'application/json'}:{},body:b?JSON.stringify(b):undefined});
@@ -122,7 +122,7 @@ function vCourse(){
 }
 function vWatching(){
   const l=courses().filter(c=>c.w.length>0&&c.w.length<c.total).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
-  return `<h2>In progress (${l.length})</h2>`+(l.length?l.map(c=>courseRow(c,true)).join(''):`<div class="empty">No course in progress.</div>`);
+  return `<h2>Following (${l.length})</h2>`+(l.length?l.map(c=>courseRow(c,true)).join(''):`<div class="empty">Nothing in progress yet. Open a course and mark an episode.</div>`);
 }
 function vStats(){
   const cs=courses();let t=0,w=0,ns=0,ip=0,dn=0;
@@ -179,7 +179,7 @@ const ACT={
   nav:id=>go({v:id,id:null}),
   open:id=>go({v:'browse',id:id||null}),
   course:id=>go({v:'course',id}),
-  back:()=>history.length>1?history.back():go({v:'browse',id:null}),
+  back:()=>history.length>1?history.back():go({v:'watching',id:null}),
   next:id=>markNext(id),
   tg:(_,a)=>{const c=S.nodes[route.id],s=new Set(c.w),n=+a.dataset.n;s.has(n)?s.delete(n):s.add(n);setW(c,s)},
   upto:()=>{const c=S.nodes[route.id],n=Math.min(parseInt($('#upto').value)||0,c.total);if(n<1)return;const s=new Set(c.w);for(let i=1;i<=n;i++)s.add(i);setW(c,s)},
@@ -214,7 +214,7 @@ function showSetup(msg){
   $('#uok').onclick=async()=>{
     let v=$('#u').value.trim();if(!v)return;if(!/^https?:\/\//.test(v))v='https://'+v;v=v.replace(/\/+$/,'');
     const old=url;url=v;$('#um').textContent='Testing…';
-    if(await load()){localStorage.setItem('ctr.url',url);route={v:'browse',id:null};history.replaceState(route,'');render()}
+    if(await load()){localStorage.setItem('ctr.url',url);route={v:'watching',id:null};history.replaceState(route,'');render()}
     else{url=old;$('#um').textContent='Could not connect to the Worker.'}
   };
 }
