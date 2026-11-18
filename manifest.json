@@ -1,13 +1,16 @@
 {
   "name": "PCT — Personal Course Tracker",
   "short_name": "PCT",
-  "start_url": "./",
+  "description": "Personal course and lecture tracker",
+  "id": "./index.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#12141c",
   "theme_color": "#12141c",
+  "orientation": "portrait-primary",
   "icons": [
-    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
-    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
